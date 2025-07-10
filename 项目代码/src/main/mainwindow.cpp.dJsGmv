@@ -1,0 +1,364 @@
+#include "mainwindow.h"
+#include "ui_mainwindow.h"
+#include <QDateTime>
+#include <QTextTable>
+#include <QTextTableCell>
+AiChat *acht;
+using namespace std;
+int yoloStatus=0;    //0表示yolov5 1 表示yolov8
+int videoStatus=0;   //0表示摄像头 1表示视频  2 表示图片
+QString videoPath;   //识别视频文件路径
+int rangingStatus=-1;//状态:标识是否测距
+QString modelPath;   //模型文件路径
+bool runStatus=false;//控制运行线程while
+int objVideoNode;    //摄像头输入编号
+string objLabelPath="coco_80_labels_list.txt"; //类别文件路径
+string segLabelPath="coco_80_labels_list.txt"; ;
+int strackStatus=0;
+int yolo_seg_status=0;      //0表示yolov5 1 表示yolov8
+QString videoPath1;   //识别视频文件路径
+int rangingStatus1;   //状态:标识是否测距
+QString modelPath1;   //模型文件路径
+bool runStatus1;      //控制运行线程while
+int objVideoNode1;    //摄像头输入编号：v4l2-ctl --list-devices查看系统设备“USB Camera: USB Camera”的设备/dev/video20后缀20
+int strackStatus1; //是否开启跟踪
+
+
+ QString videoPath2;   //识别视频文件路径
+ int rangingStatus2;   //状态:标识是否测距
+ QString modelPath2;   //模型文件路径
+ bool runStatus2;      //控制运行线程while
+ int objVideoNode2;    //摄像头输入编号：v4l2-ctl --list-devices查看系统设备“USB Camera: USB Camera”的设备/dev/video20后缀20
+ int strackStatus2; //是否开启跟踪
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+    , ui(new Ui::MainWindow)
+{
+    ui->setupUi(this);
+    Objectstyle();
+    QIcon ic(":/AI.png");
+    this->setWindowIcon(ic);
+    acht = new AiChat(this);
+    detect = new ObjectDetect;;
+    seg = new YoloSeg;
+    connect(acht,&AiChat::sendChatInfo, this, &MainWindow::sendChatInfo);
+    connect(acht,&AiChat::setParValue, this, &MainWindow::setParValue);
+    connect(ui->pushButton,&QPushButton::clicked, this, &MainWindow::clickedSend);
+//    connect(this,&MainWindow::setTextEdit, this, &MainWindow::sendChatInfo);
+    connect(ui->pushButton_2,&QPushButton::clicked, this, &MainWindow::cleanTextContent);
+    connect(ui->pushButton_4,&QPushButton::clicked, this, &MainWindow::startDetect);
+     connect(ui->pushButton_3,&QPushButton::clicked, this, &MainWindow::clickedModel);
+    connect(detect,&ObjectDetect::showImg, this, &MainWindow::showImg);
+    connect(seg,&YoloSeg::showImg, this, &MainWindow::showImg);
+}
+
+MainWindow::~MainWindow()
+{
+    acht->quit();
+    delete ui;
+}
+
+void MainWindow::Objectstyle()
+{
+    ui->progressBar->hide();
+    ui->pushButton->setEnabled(false);
+     ui->pushButton->setStyleSheet("background-color:#166abd");
+      ui->pushButton_3->setStyleSheet("background-color:#15aaaa;color:#FFFFFF");
+      ui->pushButton_4->setObjectName("startBtn");
+    ui->label->hide();
+    ui->label_2->hide();
+    ui->textEdit->setReadOnly(true);
+    ui->textEdit->setObjectName("textEditCss");
+    ui->lineEdit->setStyleSheet("border-radius: 8px;height:20px");
+    ui->lineEdit_2->setObjectName("textEditCss_2");
+     ui->lineEdit_2->setStyleSheet("border-radius: 8px;height:20px;");
+    ui->pushButton_2->setObjectName("clear");
+    ui->pushButton_2->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    ui->pushButton_2->setMaximumWidth(70);
+
+    ui->pushButton->setObjectName("send");
+    ui->pushButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    ui->pushButton->setMaximumWidth(70);
+//    ui->pushButton->setStyleSheet("background-color: #15aaaa;");
+    QFile file(":/chat.qss");
+       /* 判断文件是否存在 */
+       if (file.exists() ) {
+           /* 以只读的方式打开 */
+           file.open(QFile::ReadOnly);
+           /* 以字符串的方式保存读出的结果 */
+           QString styleSheet = QLatin1String(file.readAll());
+           /* 设置全局样式 */
+           qApp->setStyleSheet(styleSheet);
+           /* 关闭文件 */
+           file.close();
+       }
+
+
+}
+
+void MainWindow::setParValue(int value)
+{
+  ui->progressBar->show();
+  ui->label->show();
+   ui->progressBar->setFormat("Loading: %p%");
+  ui->progressBar->setValue(value);
+  if(ui->progressBar->value()==80){
+     ui->label->setText("连接成功");
+
+  }
+  if(ui->progressBar->value()==100){
+      QThread::sleep(1);
+       ui->label->hide();
+      ui->pushButton_2->setText("清空");
+      ui->progressBar->hide();
+
+  }
+}
+#include <QMessageBox>
+#include <QCameraInfo>
+#include<QCamera>
+//视觉检测启动
+void MainWindow::startDetect(){
+    if(ui->lineEdit_2->text().isEmpty()||ui->lineEdit_2->text().trimmed()==""){
+        QMessageBox::information(nullptr,"小提示","模型未选");
+        return;
+    }
+    qDebug()<<"摄像头打开中请稍等";
+    QList<QCameraInfo> list = QCameraInfo::availableCameras();
+    qDebug()<<list.constFirst();
+    if(list.size()==0){
+        QMessageBox::information(nullptr,"小提示","摄像头未检查到摄像头");
+        return;
+    }
+   // camera=new QCamera(list.last(),this);
+
+  //  camera->start();
+
+     modelPath =ui->lineEdit_2->text();   //模型文件路径
+     runStatus=true;//控制运行线程while
+    if(ui->pushButton_4->text()=="启动"){
+        ui->comboBox->setEnabled(false);
+        ui->comboBox_2->setEnabled(false);
+        yoloStatus= ui->comboBox->currentIndex(); //yolo版本 0:v5 1:v8
+        int yoloType= ui->comboBox_2->currentIndex(); //检测类型  0 目标检测 1 实力分割 2 旋转框
+        runStatus =true;
+        if(yoloType==0){
+        detect->start();
+        }else if(yoloType==1){
+        seg->start();
+        }else if(yoloType==2){
+            QMessageBox::information(nullptr,"小提示","功能暂未开发");
+            return;
+        }
+       ui->pushButton_4->setText("停止");
+    }else if(ui->pushButton_4->text()=="停止"){
+        int yoloType= ui->comboBox_2->currentIndex();
+        ui->comboBox->setEnabled(true);
+        ui->comboBox_2->setEnabled(true);
+        runStatus =false;
+        if(yoloType==0){
+         detect->quit();
+         detect->wait();
+        }else if(yoloType==1){
+            seg->quit();
+            seg->wait();
+        }else if(yoloType==2){
+
+        }
+        ui->pushButton_4->setText("启动");
+    }
+}
+
+void MainWindow::showImg(QImage img)
+{
+     ui->label_3->setPixmap(QPixmap::fromImage(img));
+}
+
+
+
+#include <QtDebug>
+QString date;
+void MainWindow::sendChatInfo(QString chatInfo,int status)
+{
+    if("<think>"==chatInfo||"</think>"==chatInfo||"\n\n"==chatInfo){
+        return;
+    }
+    QString content = ui->textEdit->toPlainText()+chatInfo;
+    if(chatInfo=="robot: "){
+
+        ui->textEdit->append("\n");
+        QString currentTime = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+        QTextCursor cursor = ui->textEdit->textCursor();
+        // 插入一个表格，表格有 2 行 2 列
+        QTextTableFormat tableFormat;
+        tableFormat.setBorder(0);
+        QTextBlockFormat ormat;
+        ormat.setLineHeight(1.5, QTextBlockFormat::ProportionalHeight);  // 这里设置了行高，可以调整
+        cursor.setBlockFormat(ormat);
+        tableFormat.setAlignment(Qt::AlignLeft);  // 设置表格居中
+        QTextTable *table = cursor.insertTable(2, 2, tableFormat);
+        table->mergeCells(0, 0, 2, 1);
+        QTextBlockFormat blockFormat;
+        blockFormat.setAlignment(Qt::AlignCenter);  // 设置内容居中
+        // 获取合并后的单元格
+         QTextCursor  cursor2= table->cellAt(0,0).firstCursorPosition();
+        cursor2.setBlockFormat(blockFormat);
+
+        // 设置合并单元格的对齐方式为居中
+
+      // 设置单元格格式
+//        QTextBlockFormat blockFormat;
+//        blockFormat.setAlignment(Qt::AlignLeft);  // 设置时间居中
+//        cursor.setBlockFormat(blockFormat);
+//        cursor.insertText(currentTime);
+//        ui->textEdit->setTextCursor(cursor);
+//        cursor.insertBlock();
+         QTextCursor cellCursor = table->cellAt(0, 0).firstCursorPosition();
+         QTextImageFormat imageFormat;
+        imageFormat.setWidth(50);  // 设置图标宽度
+        imageFormat.setHeight(40); // 设置图标高度
+        imageFormat.setName(":/AI.png");  // 图标路径
+        cellCursor.insertImage(imageFormat);
+        cellCursor = table->cellAt(0, 1).firstCursorPosition();
+        cellCursor.insertText(currentTime);
+        cellCursor = table->cellAt(1,1).firstCursorPosition();
+        date = currentTime;
+    }else{
+        QTextDocument *doc = ui->textEdit->document();
+        QTextCursor cursor(doc);
+        QTextTable *lastTable = nullptr;
+
+        // 遍历文档中的所有表格
+        while (!cursor.atEnd()) {
+            if (cursor.currentTable()) {
+                QTextTable *table = cursor.currentTable();
+
+                // 检查表格中是否包含标识文本
+                QTextCursor tableCursor = table->cellAt(0, 1).firstCursorPosition();
+                QString tableText = tableCursor.block().text();
+                if (tableText==date) {
+//                    qDebug()<<tableText;
+                    lastTable = table;  // 找到标识的表格
+                     int rowCount = table->rows();
+                     QTextCursor cellCursor = table->cellAt(rowCount - 1, 1).firstCursorPosition();
+                     // 确保光标被设置到目标单元格
+                     if (!cellCursor.isNull()) {
+                         qDebug()<<chatInfo;
+                         cellCursor.movePosition(QTextCursor::EndOfBlock); //让光标在当前单元格最后
+                         if(chatInfo.endsWith("\n")){
+                             qDebug()<<"1----------";
+                             chatInfo+="<br>";
+                         }
+                         cellCursor.insertHtml("<div style ='background-color: rgb(254,246, 248);'>"+chatInfo+"</div>");
+
+//                       qDebug()<<  cellCursor.block().text();
+                       ui->textEdit->moveCursor(QTextCursor::End);
+                     }
+                     break;
+                }
+            }
+            cursor.movePosition(QTextCursor::NextBlock);
+        }
+       if(status==2){
+           ui->pushButton->setEnabled(true);
+           ui->pushButton_2->setEnabled(true);
+            ui->pushButton->setStyleSheet("background-color:#1c97f5");
+       }
+
+    }
+
+
+
+//      QTextCursor cellCursor =table->cellAt(1,1).firstCursorPosition();
+//    cellCursor.insertText(chatInfo);
+//    QTextBlockFormat format;
+//    format.setAlignment(Qt::AlignLeft);  // 设置右对齐
+//    ui->textEdit->insertPlainText(chatInfo);
+//    cursor.setBlockFormat(format);
+//    ui->textEdit->setTextCursor(cursor);
+    //    ui->textEdit->setText(content);
+    //    ui->textEdit->moveCursor(QTextCursor::End);
+    //     QTextCursor cursor =  ui->textEdit->textCursor();
+    //     cursor.movePosition(QTextCursor::End);
+    //    QTextBlockFormat blockFormat;
+    //    blockFormat.setAlignment(Qt::AlignLeft);
+    //    cursor.mergeBlockFormat(blockFormat);
+}
+
+void MainWindow::clickedSend()
+{
+
+
+    QString chat =  ui->lineEdit->text().trimmed();
+    if(chat.isEmpty()){
+        return;
+    }
+    ui->pushButton->setEnabled(false);
+    ui->pushButton_2->setEnabled(false);
+    ui->pushButton->setStyleSheet("background-color:#166abd");
+    QString currentTime = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+
+    QTextCursor cursor = ui->textEdit->textCursor();
+
+    QTextBlockFormat blockFormat;
+    blockFormat.setAlignment(Qt::AlignRight);  // 设置时间居中
+    cursor.setBlockFormat(blockFormat);
+    cursor.insertText(currentTime);
+    ui->textEdit->setTextCursor(cursor);
+    cursor.insertBlock();
+    cursor = ui->textEdit->textCursor();
+    QTextCharFormat formatText;
+    // 自定义背景颜色，使用 RGB 值 (例如 RGB(255, 255, 0) 为黄色)
+    QColor backgroundColor(218, 242, 212);  // RGB(255, 255, 0) 为黄色
+    formatText.setBackground(backgroundColor);
+    cursor.mergeCharFormat(formatText);
+    QTextBlockFormat format;
+    format.setAlignment(Qt::AlignRight);  // 设置右对齐
+    //        ui->textEdit->append("user："+ui->lineEdit->text());
+    cursor.insertText(ui->lineEdit->text());
+
+    cursor.setBlockFormat(format);
+    ui->textEdit->setTextCursor(cursor);
+
+    //    cursor.insertText("user："+ui->lineEdit->text()+"\n");
+    acht->chat=chat;
+    acht->start();
+    ui->lineEdit->clear();
+}
+
+void MainWindow::cleanTextContent()
+{
+    if(ui->pushButton_2->text()=="连接"){
+     ui->pushButton_2->setEnabled(false);
+     ui->pushButton_2->setStyleSheet("background-color:#15aaaa");
+     acht->AiInit();
+     ui->pushButton_2->setEnabled(true);
+     ui->pushButton->setEnabled(true);
+      ui->pushButton->setStyleSheet("background-color:#1c97f5");
+    }else{
+    ui->textEdit->clear();
+    }
+}
+
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+
+    if(ui->pushButton->isEnabled()==false){
+        return;
+    }
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        clickedSend();
+    } else {
+        QWidget::keyPressEvent(event);
+    }
+}
+#include <QDir>
+#include <QFileDialog>
+void MainWindow::clickedModel()
+{
+    QString paht =QDir::currentPath();
+    QString dlgTitle="请选择一个模型文件";
+    QString filter ="模型文件(*.rknn);;";
+    modelPath = QFileDialog::getOpenFileName(nullptr,dlgTitle,paht,filter);
+    ui->lineEdit_2->setText(modelPath);
+}

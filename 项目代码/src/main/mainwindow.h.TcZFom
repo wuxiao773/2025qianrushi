@@ -1,0 +1,44 @@
+#ifndef MAINWINDOW_H
+#define MAINWINDOW_H
+
+#include <QMainWindow>
+#include "src/aichat/aichat.h"
+#include <QKeyEvent>
+#include "src/yolo_detect/objectdetect.h"
+#include "src/yolo_seg/yoloseg.h"
+#include <QImage>
+#include<QCamera>
+#include "lightsensor.h" // 添加光敏传感器头文件
+#include "detectlabel.h" // 添加DetectLabel头文件
+QT_BEGIN_NAMESPACE
+namespace Ui { class MainWindow; }
+QT_END_NAMESPACE
+
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow(QWidget *parent = nullptr);
+    ~MainWindow();
+
+public slots:
+    void sendChatInfo(QString,int status);
+    void clickedSend();
+    void cleanTextContent();
+    void keyPressEvent(QKeyEvent *event) override;
+    void Objectstyle();
+    void setParValue(int);
+    void startDetect();
+    void showImg(QImage img);
+    void clickedModel();
+signals:
+    void setTextEdit(QString,int status);
+private:
+    Ui::MainWindow *ui;
+    ObjectDetect * detect;
+    YoloSeg *  seg;
+    LightSensor *m_lightSensor;
+      DetectLabel *m_detectLabel; // 检测标签成员DetectLabel *m_detectLabel; // 检测标签成员
+};
+#endif // MAINWINDOW_H

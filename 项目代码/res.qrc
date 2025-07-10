@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>AI.png</file>
+        <file>chat.qss</file>
+    </qresource>
+</RCC>
